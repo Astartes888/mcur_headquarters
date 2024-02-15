@@ -1,0 +1,10 @@
+.env
+headq/
+bot_log.log
+run_bot.bat
+service_acc111.json
+service_acc.json
+__pycache__/
+/__pycache__
+.__pycache__
+/__pycache__/
