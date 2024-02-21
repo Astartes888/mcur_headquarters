@@ -11,6 +11,7 @@ from table.methods import CitizensAppeals, Reports
 
 KEY_PATH = os.getenv('KEY_PATH')
 TABLE_KEY = os.getenv('TABLE_KEY')
+OUR_ID = int(os.getenv('OUR_ID'))
 
 handler = TimedRotatingFileHandler(filename='bot_log.log', 
                                    when='D', 
