@@ -9,3 +9,4 @@ class FSM_bot(StatesGroup):
     problem = State()
     staff_name = State()
     end_reg = State()
+    close_app = State()

@@ -4,10 +4,11 @@ from typing import Optional
 
 from pygsheets import authorize
 from pygsheets.client import Client
-from pygsheets.exceptions import PyGsheetsException
+from pygsheets.exceptions import PyGsheetsException, CellNotFound
+from pygsheets import Cell
 
 from text.message import report_text
-from utils.tools import get_currenttime, ending_of_word
+from utils.tools import BasicTools
 
 
 class CurrentSheet(Client):
@@ -115,6 +116,22 @@ class CitizensAppeals(CurrentSheet):
         # записи данных.
         self.ending_index_of_row = self._get_last_index() + 2
 
+    def _color_the_row(self, app_nums: list[str], cells: list[Cell]):
+        list_of_ranges = [f'A{int(num)+1}:N{int(num)+1}' for num in app_nums]
+        # apply_format принимает диапазон или список деапазонов для форматирования,
+        # вторым параметром идёт ячейка или список ячеек в качестве образца форматирования,
+        # третим параметром идёт поле ячейки для обновления формата
+        self.work_sheet.apply_format(list_of_ranges, cells, fields = "userEnteredFormat.backgroundColor")
+
+    def _preparing_cells_for_update(self, app_nums: list[str]) -> list[Cell]:
+        cell_color = (0.6627451, 0.8156863, 0.5568628, 0)
+        list_of_cells = []
+        for num in app_nums:
+            ready_cell = Cell(f'L{int(num)+1}', 'Решено')
+            ready_cell.color = cell_color
+            list_of_cells.append(ready_cell)
+        return list_of_cells
+
     def update_worksheet_row(self, value: dict) -> str:
         self._preparing_range_for_fetch_values()
         fetched_values = self._fetch_values()
@@ -131,7 +148,7 @@ class CitizensAppeals(CurrentSheet):
             if all(True if i == '' else False for i in row_for_check[5:10]):
                 ready_for_update_row = [
                     [
-                        row_num - 1, get_currenttime(), value.get('type'), '', '',
+                        row_num - 1, BasicTools.get_currenttime(), value.get('type'), '', '',
                         value.get('address'), value.get('name'), value.get('phone'),
                         '', value.get('problem'), '', '', value.get('staff'), ''
                         ]
@@ -144,6 +161,17 @@ class CitizensAppeals(CurrentSheet):
         
         return number_of_applications
     
+    def close_appeals(self, value: dict) -> str:
+        list_of_app_numbers = value.get('app_nums').split(' ')
+        list_of_cells = self._preparing_cells_for_update(list_of_app_numbers)
+        sentence = 'Обращения {} были закрыты.' if len(list_of_app_numbers) > 1 else 'Обращение {} было закрыто.'
+        try:
+            self.work_sheet.update_values(cell_list=list_of_cells)
+            self._color_the_row(list_of_app_numbers, list_of_cells)
+            return sentence.format(', '.join(list_of_app_numbers))
+        except CellNotFound as err:
+            self.logger.error(f'Неудалось обновить ячейки.\nПричина: {err}')
+            return 'Обращения не закрыты, возможно Вы не правильно указали их номер.'
 
 class Reports(CurrentSheet):
 
@@ -166,7 +194,7 @@ class Reports(CurrentSheet):
         # index + 1 для возврата реального индекса строки в таблице,
         # чтобы в дальнейшем использовать их при выборке диапазона строк.
         filtred_column_with_dates = [index + 1 for index, date in prepared_for_filter\
-                                      if date == get_currenttime()] 
+                                      if date == BasicTools.get_currenttime()] 
         
         if filtred_column_with_dates:
             self.starting_index_of_row = filtred_column_with_dates[0]
@@ -240,9 +268,9 @@ class Reports(CurrentSheet):
             dict_for_sort = {}
 
             # Подготавливаем шапку нашего отчёта.
-            full_text = report_text['have_appl'].format(get_currenttime(), 
+            full_text = report_text['have_appl'].format(BasicTools.get_currenttime(), 
                                                         str(self.total_appl), 
-                                                        ending_of_word(self.total_appl)
+                                                        BasicTools.ending_of_word(self.total_appl)
                                                         )
 
             # Пробегаем по нашему словарю с видом работ и исполнителями type_of_work, 
@@ -256,14 +284,14 @@ class Reports(CurrentSheet):
                     # Проверка на последнюю запись в списке исполнителей для правильной 
                     # подстановки знака препинания в конце предложения.
                     if executor == list(executor_list.items())[-1][0]:
-                        text_template += f'\n{executor} - {amount} {ending_of_word(amount)}.'
+                        text_template += f'\n{executor} - {amount} {BasicTools.ending_of_word(amount)}.'
                     else:
-                        text_template += f'\n{executor} - {amount} {ending_of_word(amount)};'
+                        text_template += f'\n{executor} - {amount} {BasicTools.ending_of_word(amount)};'
                 # Подставляем значения в наш шаблон (text_template) с присоединёнными 
                 #строками об исполнителях. 
                 prepare_text = text_template.format(type_of_work, 
                                                     total_amount, 
-                                                    ending_of_word(total_amount)
+                                                    BasicTools.ending_of_word(total_amount)
                                                     )
                 
                 dict_for_sort[type_of_work] = [total_amount, prepare_text]
@@ -278,4 +306,4 @@ class Reports(CurrentSheet):
             return full_text    
         
         else:
-            return report_text['not_appl'].format(get_currenttime())
+            return report_text['not_appl'].format(BasicTools.get_currenttime())

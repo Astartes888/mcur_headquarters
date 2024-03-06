@@ -8,4 +8,6 @@ __pycache__/
 /__pycache__
 .__pycache__
 /__pycache__/
+table/dump.txt
 table/report_dump.txt
+tests/test_table_methods.py
