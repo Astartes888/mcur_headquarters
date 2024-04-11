@@ -35,7 +35,12 @@ async def closing_appeals(message: Message, state: FSMContext):
         await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
         return
     await state.update_data(app_nums=BasicTools.format_appeals_number(message.text))
-    inline_keyboard = await get_inline_markup(1, 'new_app', 'report', 'close')
+    inline_keyboard = await get_inline_markup(2, 
+                                              'new_app', 
+                                              'close',
+                                              'morning_report',
+                                              'evening_report',
+                                              )
     extracted_nums = await state.get_data()
     async with ChatActionSender(bot=bot, chat_id=message.chat.id):
         closed_appeals = client_for_registration.close_appeals(extracted_nums)

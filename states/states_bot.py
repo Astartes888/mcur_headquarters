@@ -10,3 +10,4 @@ class FSM_bot(StatesGroup):
     staff_name = State()
     end_reg = State()
     close_app = State()
+    morning_rep = State()

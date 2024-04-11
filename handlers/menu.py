@@ -13,7 +13,12 @@ router = Router()
 
 @router.message(CommandStart(), StateFilter(default_state))
 async def register_application(message: Message):
-    inline_keyboard = await get_inline_markup(1, 'new_app', 'report', 'close')
+    inline_keyboard = await get_inline_markup(2, 
+                                              'new_app', 
+                                              'close',
+                                              'morning_report',
+                                              'evening_report',
+                                              )
     await message.answer(bot_reply['choice'], reply_markup=inline_keyboard)
 
 
@@ -23,7 +28,12 @@ async def register_application(message: Message):
                      ~StateFilter(default_state)
                      )
 async def reg_cancel(message: Message, state: FSMContext):
-    inline_keyboard = await get_inline_markup(1, 'new_app', 'report', 'close')
+    inline_keyboard = await get_inline_markup(2, 
+                                              'new_app', 
+                                              'close',
+                                              'morning_report',
+                                              'evening_report',
+                                              )
     await message.answer(bot_reply['choice'], reply_markup=inline_keyboard)
     await state.clear()
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
@@ -31,7 +41,12 @@ async def reg_cancel(message: Message, state: FSMContext):
 
 @router.callback_query(lambda CallbackQuery: CallbackQuery.data=='cancel')
 async def reg_cancel_inline(callback: CallbackQuery, state: FSMContext):
-    inline_keyboard = await get_inline_markup(1, 'new_app', 'report', 'close')
+    inline_keyboard = await get_inline_markup(2, 
+                                              'new_app', 
+                                              'close',
+                                              'morning_report',
+                                              'evening_report',
+                                              )
     await callback.message.edit_text(bot_reply['cancel'], reply_markup=inline_keyboard)
     await state.clear()
     await callback.answer()

@@ -1,14 +1,18 @@
 import logging
 from logging import Logger
 from typing import Optional
+from io import BytesIO, FileIO
 
 from pygsheets import authorize
 from pygsheets.client import Client
 from pygsheets.exceptions import PyGsheetsException, CellNotFound
 from pygsheets import Cell
+import pandas as pd
+from pandas import DataFrame
 
-from text.message import report_text
+from text.message import evening_report_template, morning_report_template
 from utils.tools import BasicTools
+from models.templates import ManagementCompany, TemporaryTable
 
 
 class CurrentSheet(Client):
@@ -98,8 +102,7 @@ class CurrentSheet(Client):
 
 class CitizensAppeals(CurrentSheet):
 
-    # Пытаемся взять из дампа номер индекса для определения начала поиска
-    # строки.
+    # Определяем начальный номер индекса строки для поиска.
     def _define_default_starting_index(self) -> int:
         readed_dump = self._read_dump()
         if readed_dump is None:
@@ -173,7 +176,7 @@ class CitizensAppeals(CurrentSheet):
             self.logger.error(f'Неудалось обновить ячейки.\nПричина: {err}')
             return 'Обращения не закрыты, возможно Вы не правильно указали их номер.'
 
-class Reports(CurrentSheet):
+class EveningReport(CurrentSheet):
 
     def _define_actual_indexes(self):
         starting_index = self.starting_index_of_row if self.starting_index_of_row\
@@ -259,7 +262,7 @@ class Reports(CurrentSheet):
         
         return type_of_work
 
-    def prepare_report(self) -> str:
+    def prepare_evening_report(self) -> str:
         entries = self._prepare_entries()
         if entries:
             # Словарь вида dict(название работ: list(общее кол-во обращений по виду 
@@ -267,8 +270,8 @@ class Reports(CurrentSheet):
             # обращений по виду работ.
             dict_for_sort = {}
 
-            # Подготавливаем шапку нашего отчёта.
-            full_text = report_text['have_appl'].format(BasicTools.get_currenttime(), 
+            # Подготавливаем шапку нашего отчёта. 
+            full_text = evening_report_template['have_appl'].format(BasicTools.get_currenttime(), 
                                                         str(self.total_appl), 
                                                         BasicTools.ending_of_word(self.total_appl)
                                                         )
@@ -306,4 +309,169 @@ class Reports(CurrentSheet):
             return full_text    
         
         else:
-            return report_text['not_appl'].format(BasicTools.get_currenttime())
+            return evening_report_template['not_appl'].format(BasicTools.get_currenttime())
+
+class MorningReport:
+
+    def __init__(self, debug_mode=False):
+        self.debug_mode = debug_mode
+        
+    def __reset_models_data(self):
+        self.city_roads = ManagementCompany(name='city_roads')
+        self.region_roads = ManagementCompany(name='regional_roads')
+        self.tu_pirog = ManagementCompany(name='pirog')
+        self.tu_fedos = ManagementCompany(name='fedos')
+        self.gjeu = ManagementCompany(name='gjeu')
+        self.mbu_mku = ManagementCompany(name='mbu/mku')
+        self.uk = ManagementCompany(name='uk')
+        self.uo = ManagementCompany(name='uo')
+
+    @classmethod
+    def _extractig_data_from_binfile(cls, excel_file: BytesIO, file_name: str) -> list:
+        extracted_data = pd.read_excel(excel_file, sheet_name=0, usecols=[1,7,8])
+        # Начальный индекс строки с итоговым количеством сотрудников.
+        index = extracted_data[(extracted_data['Unnamed: 1'] == 'ИТОГО') | 
+                               (extracted_data['Unnamed: 1'] == 'ВСЕГО:')
+                               ].index
+        # Из фрейма вытаскиваем нужные данные в список. По индексам:
+        # 0 - люди мбу/мку, 1 - люди ук, если зима то + индекс 2 - общая техника по УО.
+        common_data = extracted_data.iloc[index[0],[1,2]].to_list() 
+        
+        if 'летнее' in file_name:
+            return common_data
+        
+        str_with_amount_tech = extracted_data.iat[67,0]
+        amount_total_tech = BasicTools.finding_digits(str_with_amount_tech)[0]
+        common_data.append(amount_total_tech)
+        return common_data
+    
+    def _parsing_messages_to_models(self, data: dict):
+        self.__reset_models_data()
+        for key in data.keys():
+            if 'data_message_' in key:
+
+                if 'На муниципальных дорогах' in data[key]:
+                    common_data = BasicTools.finding_digits(data[key])
+                    del common_data[2]
+                    self.city_roads = ManagementCompany(name='city_roads',
+                                                        tech=common_data[0], 
+                                                        workers=common_data[1]
+                                                        )
+                    self.region_roads = ManagementCompany(name='regional_roads', 
+                                                          tech=common_data[2], 
+                                                          workers=common_data[3]
+                                                          ) 
+
+                elif 'ТУ Пироговский' in data[key]:
+                    common_data = BasicTools.finding_digits(data[key])
+                    if len(common_data) > 1:
+                        self.tu_pirog = ManagementCompany(name='pirog', 
+                                                          tech=common_data[1], 
+                                                          workers=common_data[0]
+                                                          )
+                    else:
+                        self.tu_pirog = ManagementCompany(name='pirog', 
+                                                          workers=common_data[0]
+                                                          )
+
+                elif 'ТУ Федоскино' in data[key]:
+                    common_data = BasicTools.finding_digits(data[key])
+                    if len(common_data) > 1:
+                        try:
+                            total_tech = common_data[1] + common_data[2]
+                        except IndexError as err:
+                            total_tech = common_data[1]
+                    
+                        self.tu_fedos = ManagementCompany(name='fedos',
+                                                          workers=common_data[0],
+                                                          tech=total_tech 
+                                                          )
+                    else:
+                        self.tu_fedos = ManagementCompany(name='fedos',
+                                                          workers=common_data[0]
+                                                          )
+                elif 'АО "ГЖЭУ-4"' in data[key]:
+                    common_data = BasicTools.finding_digits(data[key])
+                    # Из-за названия УК индексы списка изменены.
+                    if len(common_data) > 1:
+                        self.gjeu = ManagementCompany(name='gjeu', 
+                                                          tech=common_data[2], 
+                                                          workers=common_data[1]
+                                                          )
+                    else:
+                        self.gjeu = ManagementCompany(name='gjeu', 
+                                                          workers=common_data[1]
+                                                          )
+
+            elif 'data_file_' in key:
+                bin_file = data[key][0]
+                file_name = data[key][1]
+                parsed_data = MorningReport._extractig_data_from_binfile(bin_file, file_name)
+                self.mbu_mku = ManagementCompany(name='mbu/mku', 
+                                                 workers=parsed_data[0]
+                                                 )
+                self.uk = ManagementCompany(name='uk', workers=parsed_data[1])
+                if len(parsed_data) > 2:
+                    self.uo = ManagementCompany(name='uo', tech=parsed_data[2])
+    
+    def _filling_temporary_table(self) -> DataFrame:
+        temp_table = TemporaryTable().creating_temporary_table()
+        temp_table['technique'] = [self.city_roads.tech,
+                                  self.region_roads.tech,
+                                  self.uo.tech+
+                                  self.gjeu.tech,
+                                  self.tu_fedos.tech+
+                                  self.tu_pirog.tech
+                                  ]
+        # В летней и зимней форме отчёта кол-во людей ГЖЭУ включено, поэтому не прибавляем.
+        temp_table['workers'] = [self.city_roads.workers,
+                                self.region_roads.workers,
+                                self.mbu_mku.workers+
+                                self.uk.workers,
+                                self.tu_fedos.workers+
+                                self.tu_pirog.workers
+                                ]
+        temp_table.loc['Total'] = temp_table.sum(axis=0)
+        return temp_table
+
+    def prepare_morning_report(self, data: dict) -> str:
+        self._parsing_messages_to_models(data)
+        table = self._filling_temporary_table()
+
+        if self.debug_mode:
+            print(table)
+        
+        total_workers = table.iloc[4,1]
+        total_technique = table.iloc[4,0]
+        # Общее количество рабочих управляющих организаций.
+        mc_total_workers = table.iloc[2,1]
+        # Общее количество рабочих и техники территориальных управлений.
+        tu_total_workers = table.iloc[3,1]
+        tu_total_technique = table.iloc[3,0]
+
+        define_ending_word = lambda x: 'человека' if x % 10 in (2, 3, 4)\
+              else 'человек'
+        report = morning_report_template.format(date=BasicTools.get_currenttime(),
+                                                total_t=total_technique,
+                                                end_w1=BasicTools.ending_of_word(total_technique, 
+                                                                                   morning_rep=True
+                                                                                   ),
+                                                total_w=total_workers,
+                                                end_w2=BasicTools.ending_of_word(total_workers, 
+                                                                                   morning_rep=True
+                                                                                   ),
+                                                city_t=self.city_roads.tech,
+                                                city_w=self.city_roads.workers,
+                                                regional_t=self.region_roads.tech,
+                                                regional_w=self.region_roads.workers,
+                                                courtyard_t=self.uo.tech+
+                                                self.gjeu.tech,
+                                                courtyard_w=mc_total_workers,
+                                                end_w3 = define_ending_word(mc_total_workers),
+                                                uk_w=self.uk.workers,
+                                                mbu_mku_w=self.mbu_mku.workers+
+                                                self.gjeu.workers,
+                                                villages_t=tu_total_technique,
+                                                villages_w=tu_total_workers
+                                                )
+        return report

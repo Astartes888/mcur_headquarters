@@ -108,7 +108,12 @@ async def select_staff_name(message: Message, state: FSMContext):
 @router.callback_query(StateFilter(FSM_bot.staff_name))
 async def end_of_registration(callback: CallbackQuery, state: FSMContext):
     await state.update_data(staff=staff_list[callback.data])
-    inline_keyboard = await get_inline_markup(1, 'new_app', 'report', 'close')
+    inline_keyboard = await get_inline_markup(2, 
+                                              'new_app', 
+                                              'close',
+                                              'morning_report',
+                                              'evening_report',
+                                              )
     reg_data = await state.get_data()
     async with ChatActionSender(bot=bot, chat_id=callback.message.chat.id):
     # тут вызов функции записи данных в таблицу, возвращающая номер обращения.
